@@ -14,12 +14,18 @@ let explicitFields = []; // Array to track the explicit CAPTCHA fields
  * @param {string} [size='normal'] - The size of the CAPTCHA widget. Options are 'normal' or 'compact'.
  * @param {string} [responseFieldName='cf-turnstile-response'] - The name of the hidden input field and the ID of the `<div>` that will contain the CAPTCHA widget.
  * @param {string} [siteKey=process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY] - The site key for Turnstile CAPTCHA. Defaults to the value in the environment variables.
+ * @param {function} [onExpire=() => {}] - The callback function to execute when the CAPTCHA expires.
+ * @param {function} [onError=() => {}] - The callback function to execute when an error occurs.
+ * @param {function} [onSuccess=() => {}] - The callback function to execute when the CAPTCHA is successfully solved.
  * @returns {null} No visible component is rendered, only registers the field for later initialization.
  */
 const TurnstileExplicit = ({
   theme = "light",
   size = "normal",
   responseFieldName = "cf-turnstile-response",
+  onExpire = () => {},
+  onError = () => {},
+  onSuccess = () => {},
 }) => {
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
   const JSUrl = "https://challenges.cloudflare.com/turnstile/v0/api.js?onload=turnstileReady";
@@ -60,6 +66,10 @@ const TurnstileExplicit = ({
               "response-field-name": field.fieldName,
               size: field.size,
               theme: field.theme,
+              "error-callback": onError || (() => {}),
+              "expired-callback": onExpire || (() => {}),
+              callback: onSuccess || (() => {}),
+              "timeout-callback": () => window.turnstile.reset(`#${field.fieldName}`),
             });
           });
         };
