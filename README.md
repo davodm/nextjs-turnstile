@@ -52,6 +52,9 @@ export default function MyForm() {
         theme="dark"
         size="normal"
         responseFieldName="cf-turnstile-response-1"
+        onSuccess={(token) => console.log(token)}
+        onError={(error) => console.error(error)}
+        onExpire={() => console.log('CAPTCHA expired')}
       />
       
       {/* Second CAPTCHA */}
@@ -59,6 +62,7 @@ export default function MyForm() {
         theme="light"
         size="compact"
         responseFieldName="cf-turnstile-response-2"
+        onError={(error) => console.error(error)}
       />
       
       <button type="submit">Submit</button>
@@ -105,6 +109,9 @@ export default function MyForm() {
         theme="dark"
         size="normal"
         responseFieldName="cf-turnstile-response-3"
+        onSuccess={(token) => console.log(token)}
+        onError={(error) => console.error(error)}
+        onExpire={() => console.log('CAPTCHA expired')}
       />
       
       {/* Second CAPTCHA */}
@@ -140,6 +147,14 @@ export default async function handler(req, res) {
   }
 }
 ```
+
+### Other Utilities
+**Reset CAPTCHA:** You can reset the CAPTCHA by calling the `resetTurnstile(widgetId)` function.
+`widgetId` is the query selector of the CAPTCHA widget e.g. `#cf-turnstile-response-1`.
+
+**Check and Render CAPTCHA:** You can check if the CAPTCHA is required and render it by calling the `checkTurnstile(widgetId)` function.
+`widgetId` is the query selector of the CAPTCHA widget e.g. `#cf-turnstile-response-1`.
+
 
 ## Environment Variables
 You need to add the following environment variables to your .env.local file:
