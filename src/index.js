@@ -1,3 +1,4 @@
 export { default as TurnstileImplicit } from './components/TurnstileImplicit';
 export { default as TurnstileExplicit } from './components/TurnstileExplicit';
 export { verifyTurnstile } from './utils/TurnstileVerify';
+export { resetTurnstile, checkTurnstile } from './utils/TurnstileReset';
