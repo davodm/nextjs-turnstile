@@ -137,7 +137,8 @@ import { verifyTurnstile } from 'nextjs-turnstile';
 export default async function handler(req, res) {
   const { token } = req.body;
 
-  const success = await verifyTurnstile(token, false, req);
+  const success = await verifyTurnstile(token);
+  // Passing IP directly:
   // const success = await verifyTurnstile(token, req.connection.remoteAddress);
 
   if (success) {

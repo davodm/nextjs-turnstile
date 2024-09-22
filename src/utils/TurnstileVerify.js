@@ -1,3 +1,5 @@
+import { headers } from "next/headers";
+
 /**
  * Verifies the Cloudflare Turnstile CAPTCHA response token with the Turnstile API.
  *
@@ -5,22 +7,12 @@
  * @function verifyTurnstile
  * @param {string} token - The CAPTCHA response token provided by the client-side Turnstile widget.
  * @param {string} [ipAddress] - The IP address of the user. If not provided, the function will attempt to extract it from the request headers.
- * @param {Object} [req] - The request object (optional). If provided, it is used to extract the user's IP address from headers like 'cf-connecting-ip' or 'x-forwarded-for'.
  * @returns {Promise<boolean>} - Returns `true` if the CAPTCHA verification was successful, otherwise `false`.
  *
  * @throws {Error} If the request to the Turnstile API fails or if the CAPTCHA verification fails, an error is thrown with a descriptive message.
  */
-export const verifyTurnstile = async (token, ipAddress, req = undefined) => {
+export const verifyTurnstile = async (token, ipAddress=undefined) => {
   const secretKey = process.env.TURNSTILE_SECRET_KEY;
-
-  // Fetch the user's IP address if not provided
-  let userIP = ipAddress || null;
-  if (!userIP && req?.headers) {
-    userIP =
-      req.headers["cf-connecting-ip"] ||
-      req.headers["x-forwarded-for"] ||
-      req.connection.remoteAddress;
-  }
 
   try {
     const response = await fetch(
@@ -33,7 +25,7 @@ export const verifyTurnstile = async (token, ipAddress, req = undefined) => {
         body: JSON.stringify({
           secret: secretKey,
           response: token,
-          remoteip: userIP,
+          remoteip: ipAddress || getIP(),
         }),
       }
     );
@@ -62,3 +54,24 @@ export const verifyTurnstile = async (token, ipAddress, req = undefined) => {
     return false;
   }
 };
+
+
+/**
+ * Get the user's IP address from the request headers
+ * @returns {string} The user's IP address
+ */
+function getIP() {
+  const FALLBACK_IP_ADDRESS = "0.0.0.0";
+  const forwardedFor = headers().get("x-forwarded-for");
+  const CF = headers().get("cf-connecting-ip");
+
+  if (forwardedFor) {
+    return forwardedFor.split(",")[0] ?? FALLBACK_IP_ADDRESS;
+  }
+
+  if (CF) {
+    return CF;
+  }
+
+  return headers().get("x-real-ip") ?? FALLBACK_IP_ADDRESS;
+}

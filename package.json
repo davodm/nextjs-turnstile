@@ -1,6 +1,6 @@
 {
   "name": "nextjs-turnstile",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Integrate Cloudflare Turnstile CAPTCHA in Next.js applications",
   "main": "dist/index.js",
   "scripts": {
