@@ -8,7 +8,7 @@
 export function resetTurnstile(widgetId) {
     if (typeof window === "undefined") return;
     if ("turnstile" in window) {
-      checkWidgetRender();
+      checkTurnstile();
       window.turnstile.reset(widgetId);
     }
   }
