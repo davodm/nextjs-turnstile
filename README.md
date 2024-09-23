@@ -17,6 +17,7 @@ npm install nextjs-turnstile
 
 ### Components
 **TurnstileImplicit:**
+- Note: The `onSuccess`, `onError`, and `onExpire` props are optional.
 
 ```javascript
 import React from 'react';
@@ -43,6 +44,27 @@ export default function MyForm() {
     }
   };
 
+  const handleSuccess = (token) => {
+    console.log('Captcha success:', token);
+    // Handle successful captcha verification, e.g., submit the form
+  };
+
+  const handleError = () => {
+    console.error('Captcha error occurred');
+    setAlerts((prev) => [
+      ...prev,
+      { type: 'danger', message: 'Captcha verification failed. Please try again.' },
+    ]);
+  };
+
+  const handleExpire = () => {
+    console.warn('Captcha expired');
+    setAlerts((prev) => [
+      ...prev,
+      { type: 'warning', message: 'Captcha expired. Please complete it again.' },
+    ]);
+  };
+
   return (
     <form onSubmit={handleSubmit}>
       <h2>Turnstile Implicit CAPTCHA Example</h2>
@@ -52,9 +74,9 @@ export default function MyForm() {
         theme="dark"
         size="normal"
         responseFieldName="cf-turnstile-response-1"
-        onSuccess={(token) => console.log(token)}
-        onError={(error) => console.error(error)}
-        onExpire={() => console.log('CAPTCHA expired')}
+        onSuccess={handleSuccess}
+        onError={handleError}
+        onExpire={handleExpire}
       />
       
       {/* Second CAPTCHA */}
@@ -62,7 +84,7 @@ export default function MyForm() {
         theme="light"
         size="compact"
         responseFieldName="cf-turnstile-response-2"
-        onError={(error) => console.error(error)}
+        onError={handleError}
       />
       
       <button type="submit">Submit</button>
@@ -72,6 +94,8 @@ export default function MyForm() {
 ```
 
 **TurnstileExplicit:**
+- Note: Developers must place the divs in their HTML and pass the id of the div to the `responseFieldName` prop.
+- Note: The `onSuccess`, `onError`, and `onExpire` props are optional.
 ```javascript
 import React from 'react';
 import { TurnstileExplicit, verifyTurnstile } from 'nextjs-turnstile';
