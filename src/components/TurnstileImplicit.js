@@ -1,4 +1,8 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
+import loadTurnstileScript from "../utils/loadScript";
+
+// Global registry to track used responseFieldNames
+const usedResponseFieldNames = new Set();
 
 /**
  * TurnstileImplicit component renders the Cloudflare Turnstile CAPTCHA in implicit mode.
@@ -24,33 +28,86 @@ const TurnstileImplicit = ({
   onSuccess = () => {},
 }) => {
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
-  const JSUrl = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+  const captchaDivRef = useRef(null);
 
   useEffect(() => {
-    // Load the Turnstile script only once
-    if (!document.querySelector('script[src="' + JSUrl + '"]')) {
-      const script = document.createElement("script");
-      script.src = JSUrl;
-      script.async = true;
-      document.body.appendChild(script);
+    // Check for duplicate responseFieldName
+    if (usedResponseFieldNames.has(responseFieldName)) {
+      throw new Error(
+        `Duplicate responseFieldName "${responseFieldName}" detected. Each TurnstileImplicit component must have a unique responseFieldName.`
+      );
     }
-  }, []);
+
+    // Register the responseFieldName
+    usedResponseFieldNames.add(responseFieldName);
+
+    // Define unique callback function names
+    const CALLBACK_PREFIX = `turnstileCallbacks_${responseFieldName}`;
+    const CALLBACK_NAMES = {
+      verify: `${CALLBACK_PREFIX}_verify`,
+      error: `${CALLBACK_PREFIX}_error`,
+      expire: `${CALLBACK_PREFIX}_expire`,
+      timeout: `${CALLBACK_PREFIX}_timeout`,
+    };
+
+    // Load the Turnstile script
+    loadTurnstileScript(false)
+      .then(() => {
+        if (typeof window.turnstile !== "undefined" && window.turnstile) {
+          // Define global callback functions
+          window[CALLBACK_NAMES.verify] = (token) => {
+            onSuccess(token);
+          };
+          window[CALLBACK_NAMES.error] = () => {
+            onError();
+          };
+          window[CALLBACK_NAMES.expire] = () => {
+            onExpire();
+          };
+          window[CALLBACK_NAMES.timeout] = () => {
+            if (
+              window.turnstile &&
+              typeof window.turnstile.reset === "function"
+            ) {
+              window.turnstile.reset(`#cft-${responseFieldName}`);
+            }
+          };
+
+          // **Optional:** Trigger Turnstile to scan for new elements
+          // window.turnstile.execute();
+        }
+      })
+      .catch((error) => {
+        throw new Error(`Failed to load Turnstile script: ${error}`);
+      });
+
+    // Cleanup on unmount
+    return () => {
+      // Remove callbacks from window
+      window[`${CALLBACK_PREFIX}_verify`] = null;
+      window[`${CALLBACK_PREFIX}_error`] = null;
+      window[`${CALLBACK_PREFIX}_expire`] = null;
+      window[`${CALLBACK_PREFIX}_timeout`] = null;
+
+      // Remove the responseFieldName from the registry
+      usedResponseFieldNames.delete(responseFieldName);
+    };
+  }, [theme, size, responseFieldName, siteKey, onExpire, onError, onSuccess]);
 
   return (
-    <>
-      <div
-        id={`cft-${responseFieldName}`}
-        className="cf-turnstile"
-        data-sitekey={siteKey}
-        data-theme={theme}
-        data-size={size}
-        data-response-field={responseFieldName}
-        data-expired-callback={() => onExpire()} // Invoking functions passed as props
-        data-error-callback={() => onError()}
-        data-callback={() => onSuccess()}
-        data-timeout-callback={() => turnstile && turnstile.reset(`#cft-${responseFieldName}`)} // Automatically reset the captcha on timeout
-      ></div>
-    </>
+    <div
+      id={`cft-${responseFieldName}`}
+      ref={captchaDivRef}
+      className="cf-turnstile"
+      data-sitekey={siteKey}
+      data-theme={theme}
+      data-size={size}
+      data-response-field={responseFieldName}
+      data-callback={`turnstileCallbacks_${responseFieldName}_verify`}
+      data-error-callback={`turnstileCallbacks_${responseFieldName}_error`}
+      data-expired-callback={`turnstileCallbacks_${responseFieldName}_expire`}
+      data-timeout-callback={`turnstileCallbacks_${responseFieldName}_timeout`}
+    ></div>
   );
 };
 
