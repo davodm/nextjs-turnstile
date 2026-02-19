@@ -1,6 +1,6 @@
 # Next.js Turnstile
 
-[![npm version](https://img.shields.io/npm/v/nextjs-turnstile/v/1.0.0)](https://www.npmjs.com/package/nextjs-turnstile)
+[![npm version](https://img.shields.io/npm/v/nextjs-turnstile)](https://www.npmjs.com/package/nextjs-turnstile)
 [![License](https://img.shields.io/npm/l/nextjs-turnstile)](./LICENSE)
 [![npm downloads](https://img.shields.io/npm/dw/nextjs-turnstile)](https://www.npmjs.com/package/nextjs-turnstile)
 
@@ -21,6 +21,18 @@ A simple, stable, and fully-typed [Cloudflare Turnstile](https://developers.clou
 npm install nextjs-turnstile
 ```
 
+## Exports
+
+This package ships separate entrypoints for client and server usage.
+
+```ts
+// Client components + utilities
+import { Turnstile, type TurnstileRef } from "nextjs-turnstile/client";
+
+// Server verification + helpers
+import { verifyTurnstile } from "nextjs-turnstile/server";
+```
+
 ## Quick Start
 
 ### 1. Set up environment variables
@@ -38,7 +50,7 @@ Get your keys from the [Cloudflare Dashboard](https://dash.cloudflare.com/?to=/:
 ```tsx
 "use client";
 
-import { Turnstile } from "nextjs-turnstile";
+import { Turnstile } from "nextjs-turnstile/client";
 import { useState } from "react";
 
 export default function ContactForm() {
@@ -83,7 +95,7 @@ export default function ContactForm() {
 
 ```ts
 // app/api/contact/route.ts (App Router)
-import { verifyTurnstile } from "nextjs-turnstile";
+import { verifyTurnstile } from "nextjs-turnstile/server";
 
 export async function POST(request: Request) {
   const { token } = await request.json();
@@ -153,7 +165,7 @@ export async function POST(request: Request) {
 Use a ref to control the widget programmatically:
 
 ```tsx
-import { Turnstile, TurnstileRef } from "nextjs-turnstile";
+import { Turnstile, type TurnstileRef } from "nextjs-turnstile/client";
 import { useRef } from "react";
 
 function MyForm() {
@@ -207,7 +219,7 @@ function MyForm() {
 Verifies a Turnstile token with Cloudflare's API.
 
 ```ts
-import { verifyTurnstile } from "nextjs-turnstile";
+import { verifyTurnstile, isSuccessfulVerifyResponse } from "nextjs-turnstile/server";
 
 // Basic usage (uses TURNSTILE_SECRET_KEY env var)
 const isValid = await verifyTurnstile(token);
@@ -216,8 +228,19 @@ const isValid = await verifyTurnstile(token);
 const isValid = await verifyTurnstile(token, {
   secretKey: "custom-secret-key",  // Override secret key
   ip: "1.2.3.4",                   // User's IP (auto-detected if not provided)
-  headers: request.headers,        // For IP detection in Pages Router
+  headers: request.headers,         // For IP detection in Pages Router
+  action: "login",                 // Expected action
+  hostname: "example.com",         // Expected hostname
+  timeout: 3000,                    // Abort after 3s
+  idempotencyKey: "uuid-v4",        // Retry protection
+  maxTokenAge: 300,                 // Max age in seconds
 });
+
+// Full response (for advanced handling)
+const response = await verifyTurnstile(token, { returnFullResponse: true });
+if (isSuccessfulVerifyResponse(response)) {
+  console.log("Verified at:", response.challenge_ts);
+}
 ```
 
 **Parameters:**
@@ -226,8 +249,14 @@ const isValid = await verifyTurnstile(token, {
   - `secretKey`: Override the default secret key
   - `ip`: User's IP address (auto-detected from headers)
   - `headers`: Request headers for IP detection
+  - `action`: Expected action string for validation
+  - `hostname`: Expected hostname for validation
+  - `timeout`: Abort validation after timeout in milliseconds
+  - `idempotencyKey`: UUID used for retry protection
+  - `maxTokenAge`: Maximum token age in seconds
+  - `returnFullResponse`: Return the full response instead of boolean
 
-**Returns:** `Promise<boolean>` - `true` if valid, `false` otherwise
+**Returns:** `Promise<boolean | SuccessfulVerifyResponse | FailedVerifyResponse>`
 
 ## Utility Functions
 
@@ -246,7 +275,7 @@ import {
   executeTurnstile,
   isTokenExpired,
   renderTurnstile,
-} from "nextjs-turnstile";
+} from "nextjs-turnstile/client";
 ```
 
 | Function | Description |
@@ -314,7 +343,7 @@ function DeferredForm() {
 
 ```tsx
 import { useForm } from "react-hook-form";
-import { Turnstile } from "nextjs-turnstile";
+import { Turnstile } from "nextjs-turnstile/client";
 
 function HookFormExample() {
   const { register, handleSubmit, setValue, formState } = useForm();
@@ -382,7 +411,7 @@ import { TurnstileImplicit, TurnstileExplicit } from "nextjs-turnstile";
 />
 
 // After (v1.0.0)
-import { Turnstile } from "nextjs-turnstile";
+import { Turnstile } from "nextjs-turnstile/client";
 
 <Turnstile
   responseFieldName="my-token"
