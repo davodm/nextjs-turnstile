@@ -23,15 +23,14 @@ npm install nextjs-turnstile
 
 ## Exports
 
-This package ships separate entrypoints for client and server usage.
+This package provides a single entry point with all exports:
 
 ```ts
-// Client components + utilities
-import { Turnstile, type TurnstileRef } from "nextjs-turnstile/client";
-
-// Server verification + helpers
-import { verifyTurnstile } from "nextjs-turnstile/server";
+// Import everything from the main entry
+import { Turnstile, type TurnstileRef, verifyTurnstile } from "nextjs-turnstile";
 ```
+
+Client-side components and utilities are marked with `"use client"` directive and work seamlessly in Next.js App Router.
 
 ## Quick Start
 
@@ -50,7 +49,7 @@ Get your keys from the [Cloudflare Dashboard](https://dash.cloudflare.com/?to=/:
 ```tsx
 "use client";
 
-import { Turnstile } from "nextjs-turnstile/client";
+import { Turnstile } from "nextjs-turnstile";
 import { useState } from "react";
 
 export default function ContactForm() {
@@ -95,7 +94,7 @@ export default function ContactForm() {
 
 ```ts
 // app/api/contact/route.ts (App Router)
-import { verifyTurnstile } from "nextjs-turnstile/server";
+import { verifyTurnstile } from "nextjs-turnstile";
 
 export async function POST(request: Request) {
   const { token } = await request.json();
@@ -165,7 +164,7 @@ export async function POST(request: Request) {
 Use a ref to control the widget programmatically:
 
 ```tsx
-import { Turnstile, type TurnstileRef } from "nextjs-turnstile/client";
+import { Turnstile, type TurnstileRef } from "nextjs-turnstile";
 import { useRef } from "react";
 
 function MyForm() {
@@ -219,7 +218,7 @@ function MyForm() {
 Verifies a Turnstile token with Cloudflare's API.
 
 ```ts
-import { verifyTurnstile, isSuccessfulVerifyResponse } from "nextjs-turnstile/server";
+import { verifyTurnstile, isSuccessfulVerifyResponse } from "nextjs-turnstile";
 
 // Basic usage (uses TURNSTILE_SECRET_KEY env var)
 const isValid = await verifyTurnstile(token);
@@ -275,7 +274,7 @@ import {
   executeTurnstile,
   isTokenExpired,
   renderTurnstile,
-} from "nextjs-turnstile/client";
+} from "nextjs-turnstile";
 ```
 
 | Function | Description |
@@ -343,7 +342,7 @@ function DeferredForm() {
 
 ```tsx
 import { useForm } from "react-hook-form";
-import { Turnstile } from "nextjs-turnstile/client";
+import { Turnstile } from "nextjs-turnstile";
 
 function HookFormExample() {
   const { register, handleSubmit, setValue, formState } = useForm();
@@ -399,7 +398,7 @@ function MultipleWidgets() {
 
 ## Migration from v0.x
 
-Version 1.0.0 is a breaking change with a simplified API:
+Version 1.0.0+ introduces enhanced server-side validation with backward-compatible imports:
 
 ```tsx
 // Before (v0.x)
@@ -410,8 +409,8 @@ import { TurnstileImplicit, TurnstileExplicit } from "nextjs-turnstile";
   onSuccess={handleSuccess}
 />
 
-// After (v1.0.0)
-import { Turnstile } from "nextjs-turnstile/client";
+// After (v1.0.0+)
+import { Turnstile } from "nextjs-turnstile";
 
 <Turnstile
   responseFieldName="my-token"
@@ -423,6 +422,8 @@ import { Turnstile } from "nextjs-turnstile/client";
 - Single `Turnstile` component replaces both `TurnstileImplicit` and `TurnstileExplicit`
 - Uses explicit rendering internally for better React compatibility
 - Added imperative API via ref
+- Enhanced `verifyTurnstile` with new options: `maxTokenAge`, `idempotencyKey`, `timeout`, action/hostname validation
+- New helper functions: `isSuccessfulVerifyResponse`, `getTurnstileErrorDescription`
 - Added new props: `execution`, `retry`, `retryInterval`, `action`, `cData`, `onLoad`, etc.
 - Requires React 18+ and Next.js 13+
 
