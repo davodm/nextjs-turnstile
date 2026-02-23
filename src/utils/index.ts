@@ -7,11 +7,29 @@
  * @module
  */
 
-import type { TurnstileAPI, WidgetRef } from "../types";
-import { debugWarn } from "./debug";
+// =============================================================================
+// Types
+// =============================================================================
 
-// Re-export types for use via this module
-export type { WidgetRef };
+/**
+ * Reference to a Turnstile widget.
+ * Can be a widget ID (string or number) or a container element.
+ */
+type WidgetRef = string | number | HTMLElement;
+
+/**
+ * Minimal interface for Cloudflare's Turnstile API.
+ * This is the global API object injected by the Turnstile script.
+ * @internal
+ */
+interface TurnstileAPI {
+  render(container: WidgetRef, options?: Record<string, unknown>): string | number;
+  reset(widgetId?: WidgetRef): void;
+  remove(widgetId?: WidgetRef): void;
+  getResponse(widgetId?: WidgetRef): string | undefined;
+  execute(widgetId?: WidgetRef): void;
+  isExpired(widgetId?: WidgetRef): boolean;
+}
 
 // =============================================================================
 // Constants
@@ -211,7 +229,7 @@ export function resetTurnstile(widgetRef?: WidgetRef): void {
   try {
     turnstile.reset(widgetRef);
   } catch (error) {
-    debugWarn("[Turnstile] Reset failed:", error);
+    console.warn("[Turnstile] Reset failed:", error);
   }
 }
 
@@ -235,7 +253,7 @@ export function removeTurnstile(widgetRef: WidgetRef): void {
   try {
     turnstile.remove(widgetRef);
   } catch (error) {
-    debugWarn("[Turnstile] Remove failed:", error);
+    console.warn("[Turnstile] Remove failed:", error);
   }
 }
 
@@ -265,7 +283,7 @@ export function getTurnstileResponse(widgetRef: WidgetRef): string | null {
     const response = turnstile.getResponse(widgetRef);
     return response || null;
   } catch (error) {
-    debugWarn("[Turnstile] getResponse failed:", error);
+    console.warn("[Turnstile] getResponse failed:", error);
     return null;
   }
 }
@@ -297,7 +315,7 @@ export function executeTurnstile(widgetRef: WidgetRef): void {
   try {
     turnstile.execute(widgetRef);
   } catch (error) {
-    debugWarn("[Turnstile] Execute failed:", error);
+    console.warn("[Turnstile] Execute failed:", error);
   }
 }
 

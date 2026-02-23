@@ -196,7 +196,7 @@ export async function verifyTurnstile(
         if (options.returnFullResponse) {
           return {
             success: false,
-            "error-codes": ["timeout-or-duplicate"]
+            "error-codes": ["token-too-old"]
           } satisfies FailedVerifyResponse;
         }
         return false;

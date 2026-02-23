@@ -1,7 +1,7 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/client.ts", "src/server.ts", "src/index.ts"], // multiple entry points for separate ESM/CJS builds
+  entry: ["src/index.ts"], // single entry point
   outDir: "dist",
   format: ["esm", "cjs"],
   dts: true, // generates index.d.ts

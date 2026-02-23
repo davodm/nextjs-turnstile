@@ -3,7 +3,7 @@
  */
 import React from "react";
 import { render, waitFor, act } from "@testing-library/react";
-import { Turnstile, TurnstileRef } from "../src/client";
+import { Turnstile, TurnstileRef } from "../src";
 
 // Mock the utils module
 jest.mock("../src/utils", () => ({

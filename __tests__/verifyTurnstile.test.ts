@@ -336,7 +336,7 @@ it("returns detailed error on token too old with returnFullResponse", async () =
   });
   
   expect(result).toHaveProperty("success", false);
-  expect((result as any)["error-codes"]).toContain("timeout-or-duplicate");
+  expect((result as any)["error-codes"]).toContain("token-too-old");
 });
 
 it("returns full verification response when returnFullResponse is true and token is valid", async () => {
