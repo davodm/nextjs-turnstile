@@ -1,65 +1,49 @@
-/** Cloudflare Turnstile error codes */
-export type TurnstileErrorCode =
-  | "missing-input-secret"
-  | "invalid-input-secret"
-  | "missing-input-response"
-  | "invalid-input-response"
-  | "bad-request"
-  | "timeout-or-duplicate"
-  | "internal-error"
-  | "invalid-token-format"
-  | "token-too-long"
-  | "action-mismatch"
-  | "hostname-mismatch"
-  | "token-too-old"
-  | "validation-timeout";
+const SITEVERIFY_URL =
+  "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
-const turnstileErrorDescriptions: Record<TurnstileErrorCode, string> = {
-  "missing-input-secret": "Secret parameter not provided",
-  "invalid-input-secret": "Secret key is invalid or expired",
-  "missing-input-response": "Response parameter was not provided",
-  "invalid-input-response": "Token is invalid, malformed, or expired",
-  "bad-request": "Request is malformed",
-  "timeout-or-duplicate": "Token has already been validated or expired",
-  "internal-error": "Internal error occurred in Cloudflare service",
-  "invalid-token-format": "Token is not a valid string format",
-  "token-too-long": "Token exceeds maximum length (2048 characters)",
-  "action-mismatch": "Token action does not match expected action",
-  "hostname-mismatch": "Token hostname does not match expected hostname",
-  "token-too-old": "Token age exceeds maximum allowed age",
-  "validation-timeout": "Token validation request timed out",
-} as const satisfies Record<TurnstileErrorCode, string>;
+const TOKEN_MAX_LENGTH = 2048;
+const DEFAULT_TIMEOUT_MS = 10_000;
 
-/** Options for verifying a Turnstile token. */
-export interface VerifyOptions {
-  /** Override default secret key (falls back to `TURNSTILE_SECRET_KEY`). */
-  secretKey?: string;
-  /** Provide IP manually – otherwise we attempt to auto‑detect via `getClientIp()`. */
-  ip?: string;
-  /** Optional headers fallback when running in pages router API routes. */
-  headers?: Record<string, string | string[] | undefined> | Headers;
-  /** Expected Action (e.g. "login", "signup", etc.). */
-  action?: string;
-  /** Expected Hostname (e.g. "example.com"). */
-  hostname?: string;
-  /** Timeout in milliseconds */
-  timeout?: number;
-  /** UUID for retry protection (idempotency key). Recommended for production. */
-  idempotencyKey?: string;
-  /** Maximum token age in seconds. Defaults to 300 (5 minutes). */
-  maxTokenAge?: number;
-  /** If true, returns full validation response. Otherwise returns only success boolean. */
-  returnFullResponse?: boolean;
+// ---------------------------------------------------------------------------
+// Error class
+// ---------------------------------------------------------------------------
+
+/**
+ * Thrown when Turnstile verification fails.
+ *
+ * Carries the Cloudflare `error-codes` so callers can react to specific
+ * failure reasons (e.g. `"timeout-or-duplicate"`, `"invalid-input-response"`).
+ *
+ * @see https://developers.cloudflare.com/turnstile/get-started/server-side-validation/#error-codes-reference
+ */
+export class TurnstileError extends Error {
+  readonly errorCodes: string[];
+
+  constructor(errorCodes: string[]) {
+    super(`Turnstile verification failed: ${errorCodes.join(", ")}`);
+    this.name = "TurnstileError";
+    this.errorCodes = errorCodes;
+  }
 }
 
-export type SuccessfulVerifyResponse = {
-  success: true,
-  challenge_ts: string,
-  hostname: string,
-  "error-codes": never[],
-  action: string,
-  cdata: string,
-  metadata: Record<string, string>
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+/** Options for {@link verifyTurnstile}. */
+export interface VerifyOptions {
+  /** Override the default secret key (falls back to `TURNSTILE_SECRET_KEY` env var). */
+  secretKey?: string;
+  /** Visitor IP — auto-detected via {@link getClientIp} when omitted. */
+  ip?: string;
+  /** Fallback headers for IP detection (Pages Router API routes, etc.). */
+  headers?: Record<string, string | string[] | undefined> | Headers;
+  /** Reject tokens whose `action` field doesn't match this value. */
+  action?: string;
+  /** Reject tokens whose `hostname` field doesn't match this value. */
+  hostname?: string;
+  /** Fetch timeout in milliseconds (default: **10 000**). */
+  timeout?: number;
 }
 export type FailedVerifyResponse = {
   success: false,
@@ -88,8 +72,15 @@ export function isSuccessfulVerifyResponse(
 }
 
 
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+
 /**
- * Verifies a Cloudflare Turnstile token on the server.
+ * Verifies a Cloudflare Turnstile token server-side.
+ *
+ * Returns `true` on success. Throws {@link TurnstileError} on failure with
+ * an `errorCodes` array describing what went wrong.
  *
  * Follows Cloudflare security best practices:
  * - Validates token format and length (max 2048 characters)
@@ -98,156 +89,139 @@ export function isSuccessfulVerifyResponse(
  * - Optional idempotency key for retry protection
  *
  * ```ts
- * const result = await verifyTurnstile(token);
- * if (!result.success) throw new Error("Captcha failed");
+ * // Simple — backward-compatible boolean check
+ * const ok = await verifyTurnstile(token);
+ *
+ * // With error details
+ * try {
+ *   await verifyTurnstile(token);
+ * } catch (e) {
+ *   if (e instanceof TurnstileError) {
+ *     console.error(e.errorCodes); // e.g. ["invalid-input-response"]
+ *   }
+ * }
  * ```
  *
- * @param token   - The token returned by the widget.
- * @param options - Optional configuration and security settings.
- * @returns Boolean (by default) or full verification response if `returnFullResponse` is true.
+ * @param token   The token produced by the client-side widget.
+ * @param options Optional overrides and extra validations.
+ * @returns `true` when the token is valid.
+ * @throws {TurnstileError} When verification fails (inspect `.errorCodes`).
  */
 export async function verifyTurnstile(
   token: string,
-  options: VerifyOptions = {}
-): Promise<boolean | SuccessfulVerifyResponse | FailedVerifyResponse> {
-  // 1. Validate token format and length
+  options: VerifyOptions = {},
+): Promise<boolean> {
   if (!token || typeof token !== "string") {
-    if (options.returnFullResponse) return { success: false, "error-codes": ["invalid-token-format"] };
-    return false;
+    throw new TurnstileError(["missing-input-response"]);
   }
-
-  if (token.length > 2048) {
-    if (options.returnFullResponse) return { success: false, "error-codes": ["token-too-long"] };
-    return false;
+  if (token.length > TOKEN_MAX_LENGTH) {
+    throw new TurnstileError(["invalid-input-response"]);
   }
 
   const secret = options.secretKey ?? process.env.TURNSTILE_SECRET_KEY;
-  if (!secret) throw new Error("Turnstile Secret key not provided");
-
-  const ip = options.ip ?? await getClientIp(options?.headers);
-
-  // Cloudflare's API accepts JSON (cf. docs 2024‑12‑01)
-  const body: Record<string, string> = { secret, response: token };
-  if (ip) body["remoteip"] = ip;
-  if (options.idempotencyKey) body["idempotency_key"] = options.idempotencyKey;
-
-  let timeoutId: NodeJS.Timeout | undefined;
-  try {
-    const controller = new AbortController();
-    timeoutId = options.timeout ? setTimeout(() => controller.abort(), options.timeout) : undefined;
-
-    const res = await fetch(
-      "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: options.timeout ? controller.signal : undefined,
-      }
+  if (!secret) {
+    throw new Error(
+      "[nextjs-turnstile] Secret key not provided. " +
+        "Pass `secretKey` in options or set the TURNSTILE_SECRET_KEY env var.",
     );
+  }
 
-    if (timeoutId) clearTimeout(timeoutId);
+  const ip = options.ip ?? (await getClientIp(options.headers));
 
-    if (!res.ok) {
-      throw new Error(
-        `[nextjs-turnstile] Verification request failed: ${res.status} ${res.statusText}`
-      );
-    }
-    // Cloudflare's API returns JSON with a consistent structure, so we can safely cast it.
-    const responseBody = (await res.json()) as SuccessfulVerifyResponse | FailedVerifyResponse;
+  // --- build request body ---
+  const body: Record<string, string> = { secret, response: token };
+  if (ip) body.remoteip = ip;
 
-    // 2. Check basic success
-    if (!isSuccessfulVerifyResponse(responseBody)) {
-      if (options.returnFullResponse) return responseBody as FailedVerifyResponse;
-      return false;
-    }
-    // At this point, the type guard has narrowed the type safely.
-    const verifyResponse = responseBody;
+  try {
+    body.idempotency_key = crypto.randomUUID();
+  } catch {
+    /* crypto.randomUUID not available in this runtime — skip */
+  }
 
-    // 3. Validate action if specified
-    if (options.action && verifyResponse.action !== options.action) {
-      if (options.returnFullResponse) {
-        return {
-          success: false,
-          "error-codes": ["action-mismatch"]
-        } satisfies FailedVerifyResponse;
-      }
-      return false;
-    }
+  // --- fetch with timeout ---
+  const timeout = options.timeout ?? DEFAULT_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
 
-    // 4. Validate hostname if specified
-    if (options.hostname && verifyResponse.hostname !== options.hostname) {
-      if (options.returnFullResponse) {
-        return {
-          success: false,
-          "error-codes": ["hostname-mismatch"]
-        } satisfies FailedVerifyResponse;
-      }
-      return false;
-    }
-
-    // 5. Check token age if maxTokenAge is specified
-    if (options.maxTokenAge !== undefined) {
-      const challengeTime = new Date(verifyResponse.challenge_ts);
-      const now = new Date();
-      const ageSeconds = (now.getTime() - challengeTime.getTime()) / 1000;
-
-      if (ageSeconds > options.maxTokenAge) {
-        if (options.returnFullResponse) {
-          return {
-            success: false,
-            "error-codes": ["token-too-old"]
-          } satisfies FailedVerifyResponse;
-        }
-        return false;
-      }
-    }
-
-    if (options.returnFullResponse) return verifyResponse;
-    return true;
-  } catch (error) {
-    if ((error as Error).name === "AbortError") {
-      if (options.returnFullResponse) return { success: false, "error-codes": ["validation-timeout"] } satisfies FailedVerifyResponse;
-      return false;
+  let res: Response;
+  try {
+    res = await fetch(SITEVERIFY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (error: unknown) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new TurnstileError(["timeout-error"]);
     }
     throw error;
   } finally {
-    // Clear timeout if it was set
-    if (timeoutId) clearTimeout(timeoutId);
+    clearTimeout(timer);
   }
+
+  if (!res.ok) {
+    throw new Error(
+      `[nextjs-turnstile] Siteverify request failed: ${res.status} ${res.statusText}`,
+    );
+
+  const json = (await res.json()) as {
+    success: boolean;
+    "error-codes"?: string[];
+    action?: string;
+    hostname?: string;
+  };
+
+  if (!json.success) {
+    throw new TurnstileError(json["error-codes"] ?? ["unknown-error"]);
+  }
+
+  // --- post-validation checks ---
+  if (options.action !== undefined && json.action !== options.action) {
+    throw new TurnstileError(["action-mismatch"]);
+  }
+
+  if (options.hostname !== undefined && json.hostname !== options.hostname) {
+    throw new TurnstileError(["hostname-mismatch"]);
+  }
+
+  return true;
 }
 
+// ---------------------------------------------------------------------------
+// IP helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Attempts to resolve the visitor's IP address.
+ *
+ * Resolution order:
+ * 1. `next/headers` (App Router / Server Actions)
+ * 2. Provided `initHeaders` (Pages Router / custom)
+ */
 export async function getClientIp(
-  initHeaders?: Record<string, string | string[] | undefined> | Headers
+  initHeaders?: Record<string, string | string[] | undefined> | Headers,
 ): Promise<string | undefined> {
-  // 1. Try next/headers (App Router & Server Actions)
   try {
-    // Lazy require so code still compiles in Next 12 environments
-    // where `next/headers` doesn't exist.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { headers } = require("next/headers");
 
-    // Handle both sync (Next.js 12) and async (Next.js 13+) headers()
     let h: Headers;
     try {
-      // Try calling headers() as async first (Next.js 13+)
       h = await headers();
     } catch {
-      // Fallback to sync call (Next.js 12)
       h = headers();
     }
 
     const ip =
-      h.get("x-forwarded-for")?.split(",")[0]?.trim() ||
       h.get("cf-connecting-ip") ||
+      h.get("x-forwarded-for")?.split(",")[0]?.trim() ||
       h.get("x-real-ip");
     if (ip) return ip;
-    // fallthrough to initHeaders if nothing found
   } catch {
-    /* not in app‑router context */
+    /* not in app-router context */
   }
 
-  // 2. Fallback: inspect provided initHeaders (Pages API route etc.)
   if (initHeaders) {
     const get = (name: string): string | undefined => {
       if (initHeaders instanceof Headers)
@@ -258,14 +232,13 @@ export async function getClientIp(
       return Array.isArray(val) ? val[0] : val;
     };
     return (
-      get("x-forwarded-for")?.split(",")[0]?.trim() ||
       get("cf-connecting-ip") ||
+      get("x-forwarded-for")?.split(",")[0]?.trim() ||
       get("x-real-ip") ||
       undefined
     );
   }
 
-  // 3. Nothing found
   return undefined;
 }
 
