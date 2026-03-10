@@ -169,6 +169,13 @@ export interface TurnstileProps {
   language?: string;
 
   /**
+   * Whether to allow Cloudflare to gather visitor feedback upon widget failure.
+   * Defaults to `true`. Set to `false` to disable, which is recommended
+   * for invisible widget types where feedback dialogs would be unexpected.
+   */
+  feedbackEnabled?: boolean;
+
+  /**
    * Additional CSS class for the container div.
    */
   className?: string;
@@ -283,6 +290,7 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(function Turnstile(
     cData,
     tabIndex = 0,
     language = "auto",
+    feedbackEnabled,
     className,
     style,
     onSuccess,
@@ -427,6 +435,11 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(function Turnstile(
           } catch (e) {
             console.error("[Turnstile] Execute failed:", e);
           }
+        } else if (process.env.NODE_ENV === "development") {
+          console.warn(
+            "[Turnstile] execute() called before widget is ready. " +
+              "Use isReady() or the onLoad callback to ensure the widget is rendered first."
+          );
         }
       },
 
@@ -570,6 +583,11 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(function Turnstile(
           },
         };
 
+        // Optional: feedback enabled
+        if (feedbackEnabled !== undefined) {
+          options["feedback-enabled"] = feedbackEnabled;
+        }
+
         // Optional: response field configuration
         if (responseFieldName === false) {
           options["response-field"] = false;
@@ -660,6 +678,7 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(function Turnstile(
     cData,
     tabIndex,
     language,
+    feedbackEnabled,
   ]);
 
   // ===========================================================================

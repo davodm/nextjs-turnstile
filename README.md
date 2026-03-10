@@ -136,6 +136,9 @@ export async function POST(request: Request) {
   className="my-turnstile"
   style={{ marginTop: 16 }}
   
+  // Feedback
+  feedbackEnabled={true}     // Allow Cloudflare feedback on failure (default: true)
+  
   // Callbacks
   onSuccess={(token) => {}}  // Called with verification token
   onError={(code) => {}}     // Called on error
@@ -340,6 +343,122 @@ function DeferredForm() {
         Submit
       </button>
     </form>
+  );
+}
+```
+
+### Invisible Mode
+
+When your Turnstile widget type is set to **Invisible** in the [Cloudflare Dashboard](https://dash.cloudflare.com/?to=/:account/turnstile), the challenge runs entirely in the background with zero visual footprint. No widget is ever shown to the user.
+
+> **Note:** The widget type (Managed / Non-Interactive / Invisible) is configured in the Cloudflare Dashboard when creating your sitekey. The `appearance` and `size` props are ignored for invisible widgets.
+
+#### Auto-run (recommended for most cases)
+
+The challenge runs automatically when the component mounts. The token is passed to `onSuccess` as soon as it's available:
+
+```tsx
+function InvisibleAutoForm() {
+  const [token, setToken] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+
+    await fetch("/api/submit", {
+      method: "POST",
+      headers: { "cf-turnstile-response": token },
+      body: JSON.stringify({ /* form data */ }),
+    });
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      {/* Your form fields */}
+      <Turnstile
+        onSuccess={setToken}
+        onExpire={() => setToken(null)}
+        feedbackEnabled={false}
+      />
+      <button type="submit" disabled={!token}>Submit</button>
+    </form>
+  );
+}
+```
+
+#### Deferred execution
+
+Run the challenge only when the user submits, using `execution="execute"`:
+
+```tsx
+function InvisibleDeferredForm() {
+  const turnstileRef = useRef<TurnstileRef>(null);
+  const [token, setToken] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    if (!turnstileRef.current?.isReady()) return;
+    turnstileRef.current.execute();
+  };
+
+  useEffect(() => {
+    if (token) {
+      // Token received — submit form
+      fetch("/api/submit", {
+        method: "POST",
+        headers: { "cf-turnstile-response": token },
+        body: JSON.stringify({ /* form data */ }),
+      });
+    }
+  }, [token]);
+
+  return (
+    <form>
+      {/* Your form fields */}
+      <Turnstile
+        ref={turnstileRef}
+        execution="execute"
+        onSuccess={setToken}
+        feedbackEnabled={false}
+      />
+      <button type="button" onClick={handleSubmit}>Submit</button>
+    </form>
+  );
+}
+```
+
+#### Protecting API endpoints (Troy Hunt pattern)
+
+Use an invisible widget to protect API calls by attaching the token as a header:
+
+```tsx
+function ProtectedSearch() {
+  const [token, setToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileRef>(null);
+
+  const handleSearch = async (query: string) => {
+    if (!token) return;
+
+    const res = await fetch(`/api/search?q=${query}`, {
+      headers: { "cf-turnstile-response": token },
+    });
+
+    // Reset the widget for the next request (tokens are single-use)
+    turnstileRef.current?.reset();
+    setToken(null);
+
+    return res.json();
+  };
+
+  return (
+    <div>
+      <Turnstile
+        ref={turnstileRef}
+        onSuccess={setToken}
+        onExpire={() => setToken(null)}
+        feedbackEnabled={false}
+      />
+      <SearchInput onSearch={handleSearch} disabled={!token} />
+    </div>
   );
 }
 ```

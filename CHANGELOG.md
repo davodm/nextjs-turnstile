@@ -3,6 +3,44 @@
 All notable changes to this project will be documented in this file.
 
 
+## [1.0.5] - 2026-03-10
+
+### Added
+
+- **Invisible Mode Support**: Full support for Cloudflare's invisible widget type with auto-run and deferred execution patterns
+- **`feedbackEnabled` prop**: Control Cloudflare's visitor feedback on widget failure (`feedback-enabled`), recommended to disable for invisible widgets
+- **Dev-mode warning**: `execute()` via ref now warns in development when called before the widget is ready, helping debug invisible mode where there is no visual feedback
+
+### Tests
+
+- **Invisible Mode**: Added 6 new tests covering deferred execution, auto-run, `feedbackEnabled`, and token expiration/refresh flows
+
+### Docs
+
+- **Invisible Mode Guide**: Added comprehensive README section with three usage patterns — auto-run, deferred execution, and API endpoint protection (Troy Hunt pattern)
+
+## [1.0.4] - 2026-02-23
+
+### Changed
+
+- **Server-side Verification**: Rewrote `verifyTurnstile()` to align with Cloudflare's siteverify best practices
+
+### Added
+
+- **`TurnstileError` class**: Thrown on verification failure with `.errorCodes` array for structured error handling
+- **Token validation**: Input validation with empty check and 2048-char max length
+- **Fetch timeout**: AbortController-based fetch timeout (default 10s)
+- **Post-validation checks**: Optional `action` and `hostname` post-validation against the siteverify response
+- **Idempotency key**: Auto-generated per request for safe retries
+
+### Fixed
+
+- **IP detection**: Prioritize `cf-connecting-ip` over `x-forwarded-for` for more reliable IP detection
+
+### Tests
+
+- **Server verification**: Expanded test suite from 9 to 19 cases covering all new verification behavior
+
 ## [1.0.3] - 2026-01-10
 
 ### Fixed

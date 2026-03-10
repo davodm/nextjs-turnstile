@@ -632,4 +632,172 @@ describe("Turnstile Component", () => {
       });
     });
   });
+
+  // ===========================================================================
+  // Invisible Mode
+  // ===========================================================================
+
+  describe("Invisible Mode", () => {
+    it("supports deferred execution for invisible widgets", async () => {
+      const ref = React.createRef<TurnstileRef>();
+      const onSuccess = jest.fn();
+
+      render(
+        <Turnstile
+          siteKey="test-key"
+          ref={ref}
+          execution="execute"
+          onSuccess={onSuccess}
+        />
+      );
+
+      await waitFor(() => {
+        expect(mockRender).toHaveBeenCalled();
+      });
+
+      // Verify execution="execute" was passed to Cloudflare
+      const renderCall = mockRender.mock.calls[0] as unknown as [HTMLElement, Record<string, unknown>];
+      const options = renderCall[1];
+      expect(options.execution).toBe("execute");
+
+      // Simulate user triggering execute
+      act(() => {
+        ref.current?.execute();
+      });
+
+      expect(mockExecute).toHaveBeenCalledWith("test-widget-id");
+
+      // Simulate Cloudflare calling the success callback after challenge completes
+      act(() => {
+        (options.callback as (token: string) => void)("invisible-token-123");
+      });
+
+      expect(onSuccess).toHaveBeenCalledWith("invisible-token-123");
+    });
+
+    it("warns in dev mode when execute() is called before widget is ready", async () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+      const originalEnv = process.env.NODE_ENV;
+      Object.defineProperty(process.env, "NODE_ENV", { value: "development", writable: true });
+
+      const ref = React.createRef<TurnstileRef>();
+
+      // Remove window.turnstile temporarily so widget can't be ready
+      const savedTurnstile = (window as any).turnstile;
+      delete (window as any).turnstile;
+
+      render(
+        <Turnstile siteKey="test-key" ref={ref} execution="execute" />
+      );
+
+      // Call execute immediately (before widget is rendered)
+      act(() => {
+        ref.current?.execute();
+      });
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("execute() called before widget is ready")
+      );
+
+      // Restore
+      (window as any).turnstile = savedTurnstile;
+      Object.defineProperty(process.env, "NODE_ENV", { value: originalEnv, writable: true });
+      warnSpy.mockRestore();
+    });
+
+    it("auto-runs challenge for invisible widgets with execution='render'", async () => {
+      const onSuccess = jest.fn();
+
+      render(
+        <Turnstile
+          siteKey="test-key"
+          execution="render"
+          onSuccess={onSuccess}
+        />
+      );
+
+      await waitFor(() => {
+        expect(mockRender).toHaveBeenCalled();
+      });
+
+      // Verify execution="render" was passed (challenge runs automatically)
+      const renderCall = mockRender.mock.calls[0] as unknown as [HTMLElement, Record<string, unknown>];
+      const options = renderCall[1];
+      expect(options.execution).toBe("render");
+
+      // Simulate Cloudflare auto-completing the challenge
+      act(() => {
+        (options.callback as (token: string) => void)("auto-token-456");
+      });
+
+      expect(onSuccess).toHaveBeenCalledWith("auto-token-456");
+    });
+
+    it("passes feedbackEnabled=false to disable feedback for invisible widgets", async () => {
+      render(
+        <Turnstile siteKey="test-key" feedbackEnabled={false} />
+      );
+
+      await waitFor(() => {
+        expect(mockRender).toHaveBeenCalledWith(
+          expect.any(HTMLElement),
+          expect.objectContaining({
+            "feedback-enabled": false,
+          })
+        );
+      });
+    });
+
+    it("does not pass feedback-enabled when feedbackEnabled is undefined", async () => {
+      render(<Turnstile siteKey="test-key" />);
+
+      await waitFor(() => {
+        expect(mockRender).toHaveBeenCalled();
+      });
+
+      const renderCall = mockRender.mock.calls[0] as unknown as [HTMLElement, Record<string, unknown>];
+      const options = renderCall[1];
+      expect(options).not.toHaveProperty("feedback-enabled");
+    });
+
+    it("handles token expiration callback for invisible widgets", async () => {
+      const onExpire = jest.fn();
+      const onSuccess = jest.fn();
+
+      render(
+        <Turnstile
+          siteKey="test-key"
+          refreshExpired="auto"
+          onSuccess={onSuccess}
+          onExpire={onExpire}
+        />
+      );
+
+      await waitFor(() => {
+        expect(mockRender).toHaveBeenCalled();
+      });
+
+      const renderCall = mockRender.mock.calls[0] as unknown as [HTMLElement, Record<string, unknown>];
+      const options = renderCall[1];
+
+      // Simulate initial token
+      act(() => {
+        (options.callback as (token: string) => void)("first-token");
+      });
+      expect(onSuccess).toHaveBeenCalledWith("first-token");
+
+      // Simulate token expiration
+      act(() => {
+        (options["expired-callback"] as () => void)();
+      });
+      expect(onExpire).toHaveBeenCalled();
+
+      // Simulate auto-refresh producing a new token
+      act(() => {
+        (options.callback as (token: string) => void)("refreshed-token");
+      });
+      expect(onSuccess).toHaveBeenCalledWith("refreshed-token");
+      expect(onSuccess).toHaveBeenCalledTimes(2);
+    });
+  });
 });
