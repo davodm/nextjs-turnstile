@@ -5,6 +5,7 @@ import {
   verifyTurnstile,
   getClientIp,
   TurnstileError,
+  SITEVERIFY_URL_CN,
 } from "../src/utils/verifyTurnstile";
 import fetchMock from "jest-fetch-mock";
 
@@ -165,6 +166,25 @@ it("throws on non-ok HTTP status", async () => {
   await expect(
     verifyTurnstile("token-abc", { secretKey: "shhh" }),
   ).rejects.toThrow(/Siteverify request failed.*500/);
+});
+
+it("throws TurnstileError with error-codes from a non-ok siteverify response", async () => {
+  fetchMock.mockResponseOnce(
+    JSON.stringify({ success: false, "error-codes": ["invalid-input-secret"] }),
+    { status: 400 },
+  );
+  await expect(
+    verifyTurnstile("token-abc", { secretKey: "shhh" }),
+  ).rejects.toMatchObject({ errorCodes: ["invalid-input-secret"] });
+});
+
+it("uses a custom siteverifyUrl", async () => {
+  fetchMock.mockResponseOnce(JSON.stringify({ success: true }));
+  await verifyTurnstile("token-abc", {
+    secretKey: "shhh",
+    siteverifyUrl: SITEVERIFY_URL_CN,
+  });
+  expect(fetchMock.mock.calls[0][0]).toBe(SITEVERIFY_URL_CN);
 });
 
 // ---------------------------------------------------------------------------

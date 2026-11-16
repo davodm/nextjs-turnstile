@@ -2,7 +2,12 @@
 
 [![npm version](https://img.shields.io/npm/v/nextjs-turnstile)](https://www.npmjs.com/package/nextjs-turnstile)
 [![License](https://img.shields.io/npm/l/nextjs-turnstile)](./LICENSE)
-[![npm downloads](https://img.shields.io/npm/dw/nextjs-turnstile)](https://www.npmjs.com/package/nextjs-turnstile)
+[![npm downloads](https://img.shields.io/npm/dm/nextjs-turnstile)](https://www.npmjs.com/package/nextjs-turnstile)
+[![CI](https://github.com/davodm/nextjs-turnstile/actions/workflows/ci.yml/badge.svg)](https://github.com/davodm/nextjs-turnstile/actions/workflows/ci.yml)
+[![types](https://img.shields.io/npm/types/nextjs-turnstile)](https://www.npmjs.com/package/nextjs-turnstile)
+[![minzipped size](https://img.shields.io/bundlephobia/minzip/nextjs-turnstile)](https://bundlephobia.com/package/nextjs-turnstile)
+[![GitHub stars](https://img.shields.io/github/stars/davodm/nextjs-turnstile)](https://github.com/davodm/nextjs-turnstile)
+[![node](https://img.shields.io/node/v/nextjs-turnstile)](https://www.npmjs.com/package/nextjs-turnstile)
 
 A simple, stable, and fully-typed [Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/) CAPTCHA integration for Next.js applications.
 
@@ -81,20 +86,25 @@ export default function ContactForm() {
 
 ### 3. Verify the token on your server
 
+Server helpers live in a separate entry point so they never end up in the client bundle.
+
 ```ts
 // app/api/contact/route.ts (App Router)
-import { verifyTurnstile } from "nextjs-turnstile";
+import { verifyTurnstile, TurnstileError } from "nextjs-turnstile/server";
 
 export async function POST(request: Request) {
   const { token } = await request.json();
 
-  const isValid = await verifyTurnstile(token);
-  
-  if (!isValid) {
-    return Response.json(
-      { error: "CAPTCHA verification failed" },
-      { status: 400 }
-    );
+  try {
+    await verifyTurnstile(token); // throws on failure
+  } catch (e) {
+    if (e instanceof TurnstileError) {
+      return Response.json(
+        { error: "CAPTCHA verification failed", codes: e.errorCodes },
+        { status: 400 }
+      );
+    }
+    throw e; // config or network error
   }
 
   // Token is valid, continue with your logic...
@@ -124,7 +134,7 @@ export async function POST(request: Request) {
   // Form integration
   responseFieldName="cf-turnstile-response"  // Name for hidden input, or false to disable
   
-  // Analytics
+  // Analytics (alphanumeric, "_" and "-" only)
   action="login"           // Custom action identifier (max 32 chars)
   cData="user-123"         // Custom data payload (max 255 chars)
   
@@ -138,6 +148,8 @@ export async function POST(request: Request) {
   
   // Feedback
   feedbackEnabled={true}     // Allow Cloudflare feedback on failure (default: true)
+  offlabelShowPrivacy={true} // Privacy link on unbranded widgets (default: true)
+  offlabelShowHelp={true}    // Help link on unbranded widgets (default: true)
   
   // Callbacks
   onSuccess={(token) => {}}  // Called with verification token
@@ -211,16 +223,16 @@ Verifies a Turnstile token with Cloudflare's [siteverify API](https://developers
 Returns `true` on success. Throws `TurnstileError` on failure with an `errorCodes` array describing what went wrong.
 
 ```ts
-import { verifyTurnstile } from "nextjs-turnstile";
+import { verifyTurnstile } from "nextjs-turnstile/server";
 
-// Basic usage (uses TURNSTILE_SECRET_KEY env var)
-const ok = await verifyTurnstile(token);
+// Basic usage (uses TURNSTILE_SECRET_KEY env var). Resolves to true, throws on failure.
+await verifyTurnstile(token);
 ```
 
 #### Error handling
 
 ```ts
-import { verifyTurnstile, TurnstileError } from "nextjs-turnstile";
+import { verifyTurnstile, TurnstileError } from "nextjs-turnstile/server";
 
 try {
   await verifyTurnstile(token);
@@ -234,13 +246,14 @@ try {
 #### Advanced options
 
 ```ts
-const ok = await verifyTurnstile(token, {
+await verifyTurnstile(token, {
   secretKey: "custom-secret-key",  // Override secret key
   ip: "1.2.3.4",                   // User's IP (auto-detected if omitted)
   headers: request.headers,        // For IP detection in Pages Router
   action: "login",                 // Reject if action doesn't match
   hostname: "example.com",         // Reject if hostname doesn't match
   timeout: 5000,                   // Fetch timeout in ms (default: 10 000)
+  siteverifyUrl: SITEVERIFY_URL_CN, // China-domain widgets (import from "nextjs-turnstile/server")
 });
 ```
 
@@ -253,6 +266,7 @@ const ok = await verifyTurnstile(token, {
   - `action`: Reject tokens whose `action` field doesn't match
   - `hostname`: Reject tokens whose `hostname` field doesn't match
   - `timeout`: Fetch timeout in milliseconds (default: `10000`)
+  - `siteverifyUrl`: Siteverify endpoint override. Use `SITEVERIFY_URL_CN` for China-domain widgets
 
 **Returns:** `Promise<boolean>` — `true` when the token is valid
 
@@ -521,6 +535,17 @@ function MultipleWidgets() {
 }
 ```
 
+## Migration from v1.x to v2.x
+
+Server helpers moved to a dedicated entry point. The root entry is now client-only and ships with `"use client"`, so `<Turnstile>` can be imported straight into Server Components.
+
+```diff
+- import { verifyTurnstile, TurnstileError, getClientIp } from "nextjs-turnstile";
++ import { verifyTurnstile, TurnstileError, getClientIp } from "nextjs-turnstile/server";
+```
+
+`verifyTurnstile` still throws on failure: use `try/catch`, not `if (!ok)`.
+
 ## Migration from v0.x
 
 Version 1.0.0 is a breaking change with a simplified API:
@@ -558,6 +583,10 @@ import { Turnstile } from "nextjs-turnstile";
 2. Ensure you're running on `http://` or `https://` (not `file://`)
 3. Check the browser console for errors
 
+### Widget fails only on some domains
+
+Cloudflare only serves the widget on hostnames listed for the widget in the dashboard. Adding `example.com` also covers its subdomains. Do not include schemes, ports or paths, wildcards are not supported, and the free plan allows 10 hostnames per widget. For local development add `localhost` or use the [dummy test keys](https://developers.cloudflare.com/turnstile/troubleshooting/testing/). See [Hostname management](https://developers.cloudflare.com/turnstile/additional-configuration/hostname-management/).
+
 ### Token verification fails
 
 1. Verify your secret key is correct
@@ -575,6 +604,8 @@ This usually happens when React re-renders the component. Ensure:
 
 - [Cloudflare Turnstile Docs](https://developers.cloudflare.com/turnstile/)
 - [Widget Configuration](https://developers.cloudflare.com/turnstile/get-started/client-side-rendering/widget-configurations/)
+- [Server-side Validation](https://developers.cloudflare.com/turnstile/get-started/server-side-validation/)
+- [Hostname Management](https://developers.cloudflare.com/turnstile/additional-configuration/hostname-management/)
 - [Error Codes](https://developers.cloudflare.com/turnstile/troubleshooting/client-side-errors/error-codes/)
 - [GitHub Repository](https://github.com/davodm/nextjs-turnstile)
 

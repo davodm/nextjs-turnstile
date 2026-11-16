@@ -8,8 +8,4 @@ module.exports = {
 
   /* Optional niceties */
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
-  moduleNameMapper: {
-    // Map Next’s built-ins away during tests
-    '^next/script$': require.resolve('next/dist/client/script'),
-  },
 };

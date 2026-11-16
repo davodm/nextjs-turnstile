@@ -110,6 +110,30 @@ describe("Turnstile utils", () => {
 
       await loadPromise;
     });
+
+    it("drops the cached promise and script tag after a load failure so a retry works", async () => {
+      delete (window as any).turnstile;
+      document.querySelectorAll("script").forEach((el) => el.remove());
+
+      const first = loadTurnstileScript();
+      const script = document.querySelector(
+        'script[src*="challenges.cloudflare.com/turnstile"]'
+      ) as HTMLScriptElement;
+      script.onerror?.(new Event("error"));
+      await expect(first).rejects.toThrow(/failed to load/i);
+
+      expect(document.querySelector('script[src*="challenges.cloudflare.com/turnstile"]')).toBeNull();
+
+      const second = loadTurnstileScript();
+      expect(second).not.toBe(first);
+      const retryScript = document.querySelector(
+        'script[src*="challenges.cloudflare.com/turnstile"]'
+      ) as HTMLScriptElement;
+      expect(retryScript).not.toBeNull();
+      (window as any).turnstile = mockTurnstile;
+      (window as any)[retryScript.src.match(/onload=([^&]+)/)![1]]();
+      await expect(second).resolves.toBeUndefined();
+    });
   });
 
   // ===========================================================================
