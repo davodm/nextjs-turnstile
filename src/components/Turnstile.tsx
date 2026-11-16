@@ -9,7 +9,7 @@ import {
   forwardRef,
   useImperativeHandle,
 } from "react";
-import { loadTurnstileScript, removeTurnstile } from "../utils";
+import { getTurnstile, loadTurnstileScript, removeTurnstile } from "../utils";
 
 // =============================================================================
 // Types
@@ -176,6 +176,16 @@ export interface TurnstileProps {
   feedbackEnabled?: boolean;
 
   /**
+   * Show the privacy link on unbranded (off-label) widgets. Cloudflare default is `true`.
+   */
+  offlabelShowPrivacy?: boolean;
+
+  /**
+   * Show the help link on unbranded (off-label) widgets. Cloudflare default is `true`.
+   */
+  offlabelShowHelp?: boolean;
+
+  /**
    * Additional CSS class for the container div.
    */
   className?: string;
@@ -291,6 +301,8 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(function Turnstile(
     tabIndex = 0,
     language = "auto",
     feedbackEnabled,
+    offlabelShowPrivacy,
+    offlabelShowHelp,
     className,
     style,
     onSuccess,
@@ -340,9 +352,6 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(function Turnstile(
   // Track if widget is ready
   const [isReady, setIsReady] = useState(false);
 
-  // Track if component is mounted (for async safety)
-  const isMountedRef = useRef(true);
-
   // Track if we have successfully rendered a widget in this component instance
   // This persists across Strict Mode effect re-runs and prevents double rendering
   const hasRenderedRef = useRef(false);
@@ -378,14 +387,6 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(function Turnstile(
   // ===========================================================================
   // Imperative handle (ref API)
   // ===========================================================================
-
-  /**
-   * Get the Turnstile API from window, with safety check.
-   */
-  const getTurnstile = useCallback(() => {
-    if (typeof window === "undefined") return null;
-    return (window as any).turnstile as TurnstileAPI | undefined;
-  }, []);
 
   useImperativeHandle(
     ref,
@@ -447,7 +448,7 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(function Turnstile(
 
       getWidgetId: () => widgetIdRef.current,
     }),
-    [getTurnstile, isReady]
+    [isReady]
   );
 
   // ===========================================================================
@@ -455,7 +456,8 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(function Turnstile(
   // ===========================================================================
 
   useEffect(() => {
-    isMountedRef.current = true;
+    // Per-effect flag: a stale effect's async work must never touch a newer widget.
+    let cancelled = false;
     const container = containerRef.current;
 
     if (!container) {
@@ -485,9 +487,8 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(function Turnstile(
     // Check 2: If we have a widget ID but hasRenderedRef is false, it means this is a
     // re-render due to configuration changes - we need to remove the old widget first
     if (widgetIdRef.current) {
-      console.log("[Turnstile] Configuration changed, re-rendering widget");
-      // Check if turnstile is already available (script already loaded)
-      const turnstile = (window as any).turnstile as TurnstileAPI | undefined;
+      // Config changed: remove the previous widget before re-rendering
+      const turnstile = getTurnstile();
       if (turnstile) {
         try {
           turnstile.remove(widgetIdRef.current);
@@ -511,13 +512,15 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(function Turnstile(
     // Load the Turnstile script and render the widget
     loadTurnstileScript()
       .then(() => {
-        // Safety check: component might have unmounted during script load
-        if (!isMountedRef.current || !containerRef.current) {
+        // Stale effect (unmounted or props changed during script load): do nothing,
+        // the cleanup already reset the shared flags for the newer run.
+        if (cancelled) return;
+        if (!containerRef.current) {
           hasRenderedRef.current = false;
           return;
         }
 
-        const turnstile = (window as any).turnstile as TurnstileAPI | undefined;
+        const turnstile = getTurnstile();
 
         if (!turnstile) {
           console.error("[Turnstile] Script loaded but turnstile object not found.");
@@ -588,6 +591,13 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(function Turnstile(
           options["feedback-enabled"] = feedbackEnabled;
         }
 
+        if (offlabelShowPrivacy !== undefined) {
+          options["offlabel-show-privacy"] = offlabelShowPrivacy;
+        }
+        if (offlabelShowHelp !== undefined) {
+          options["offlabel-show-help"] = offlabelShowHelp;
+        }
+
         // Optional: response field configuration
         if (responseFieldName === false) {
           options["response-field"] = false;
@@ -610,10 +620,8 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(function Turnstile(
           if (renderedId !== undefined && renderedId !== null) {
             widgetIdRef.current = String(renderedId);
 
-            if (isMountedRef.current) {
-              setIsReady(true);
-              onLoadRef.current?.();
-            }
+            setIsReady(true);
+            onLoadRef.current?.();
           } else {
             console.error("[Turnstile] Render returned invalid widget ID.");
             onErrorRef.current?.("render_failed");
@@ -627,15 +635,14 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(function Turnstile(
       })
       .catch((error) => {
         console.error("[Turnstile] Script load failed:", error);
-        if (isMountedRef.current) {
-          onErrorRef.current?.("script_load_failed");
-        }
+        if (cancelled) return;
+        onErrorRef.current?.("script_load_failed");
         hasRenderedRef.current = false;
       });
 
     // Cleanup on unmount or when dependencies change
     return () => {
-      isMountedRef.current = false;
+      cancelled = true;
 
       // ==========================================================================
       // Enhanced Cleanup Strategy for Strict Mode + Re-rendering
@@ -679,6 +686,8 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(function Turnstile(
     tabIndex,
     language,
     feedbackEnabled,
+    offlabelShowPrivacy,
+    offlabelShowHelp,
   ]);
 
   // ===========================================================================
@@ -691,25 +700,10 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(function Turnstile(
       className={className}
       style={style}
       // Accessibility: ensure the container can be focused if needed
+      role="group"
       aria-label="Cloudflare Turnstile challenge"
     />
   );
 });
-
-// =============================================================================
-// Internal Types (Cloudflare's API shape)
-// =============================================================================
-
-/**
- * Minimal typing for Cloudflare's Turnstile API.
- * @internal
- */
-interface TurnstileAPI {
-  render(container: HTMLElement, options: Record<string, unknown>): string | number | undefined;
-  reset(widgetId?: string | number): void;
-  remove(widgetId?: string | number): void;
-  getResponse(widgetId?: string | number): string | undefined;
-  execute(widgetId?: string | number): void;
-}
 
 export default Turnstile;

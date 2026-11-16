@@ -16,6 +16,7 @@ jest.mock("../src/utils", () => ({
     iframes.forEach(iframe => iframe.remove());
   }),
   isTurnstileLoaded: jest.fn(() => true),
+  getTurnstile: jest.fn(() => (window as unknown as { turnstile?: unknown }).turnstile),
 }));
 
 // Silence console noise in tests

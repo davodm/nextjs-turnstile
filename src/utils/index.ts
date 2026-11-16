@@ -33,9 +33,10 @@ export type WidgetRef = string | number | HTMLElement;
 /**
  * Minimal interface for Cloudflare's Turnstile API.
  * @see https://developers.cloudflare.com/turnstile/get-started/client-side-rendering/
+ * @internal
  */
-interface TurnstileAPI {
-  render(container: WidgetRef, options?: Record<string, unknown>): string | number;
+export interface TurnstileAPI {
+  render(container: WidgetRef, options?: Record<string, unknown>): string | number | undefined;
   reset(widgetId?: WidgetRef): void;
   remove(widgetId?: WidgetRef): void;
   getResponse(widgetId?: WidgetRef): string | undefined;
@@ -43,22 +44,24 @@ interface TurnstileAPI {
   isExpired(widgetId?: WidgetRef): boolean;
 }
 
-// Extend window type to include turnstile
-declare global {
-  interface Window {
-    turnstile?: TurnstileAPI;
-  }
+/** Window shape used internally; avoids a global augmentation leaking into consumers' types. */
+type TurnstileWindow = Window & {
+  turnstile?: TurnstileAPI;
+  __turnstile_load_promise__?: Promise<void>;
+};
+
+/**
+ * Returns Cloudflare's Turnstile API from `window`, or `undefined` on the server / before load.
+ * @internal
+ */
+export function getTurnstile(): TurnstileAPI | undefined {
+  if (typeof window === "undefined") return undefined;
+  return (window as unknown as TurnstileWindow).turnstile;
 }
 
 // =============================================================================
 // Script Loading
 // =============================================================================
-
-/**
- * Cache key for the script loading promise.
- * Using a symbol to avoid conflicts with other libraries.
- */
-const SCRIPT_PROMISE_KEY = "__turnstile_load_promise__";
 
 /**
  * Loads the Cloudflare Turnstile script in explicit rendering mode.
@@ -83,16 +86,17 @@ export function loadTurnstileScript(): Promise<void> {
     return Promise.resolve();
   }
 
+  const w = window as unknown as TurnstileWindow;
+
   // Return cached promise if script is already loading/loaded
-  const cached = (window as any)[SCRIPT_PROMISE_KEY] as Promise<void> | undefined;
-  if (cached) {
-    return cached;
+  if (w.__turnstile_load_promise__) {
+    return w.__turnstile_load_promise__;
   }
 
   // Create and cache the loading promise
   const promise = new Promise<void>((resolve, reject) => {
     // Case 1: Turnstile is already available (script was loaded elsewhere)
-    if (window.turnstile) {
+    if (w.turnstile) {
       resolve();
       return;
     }
@@ -109,7 +113,7 @@ export function loadTurnstileScript(): Promise<void> {
       const interval = setInterval(() => {
         elapsed += SCRIPT_POLL_INTERVAL;
 
-        if (window.turnstile) {
+        if (w.turnstile) {
           clearInterval(interval);
           resolve();
         } else if (elapsed >= SCRIPT_LOAD_TIMEOUT) {
@@ -128,6 +132,7 @@ export function loadTurnstileScript(): Promise<void> {
 
     // Generate unique callback name to avoid conflicts
     const callbackName = `__cfTurnstileOnLoad_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const callbacks = window as unknown as Record<string, (() => void) | undefined>;
 
     // Use explicit rendering mode with onload callback
     // This gives us precise control over when widgets are rendered
@@ -136,19 +141,20 @@ export function loadTurnstileScript(): Promise<void> {
     // Set up timeout
     const timeoutId = setTimeout(() => {
       cleanup();
+      script.remove();
       reject(new Error("[Turnstile] Script load timeout."));
     }, SCRIPT_LOAD_TIMEOUT);
 
     // Cleanup helper
     const cleanup = () => {
       clearTimeout(timeoutId);
-      delete (window as any)[callbackName];
+      delete callbacks[callbackName];
     };
 
     // Success callback (called by Cloudflare when script is ready)
-    (window as any)[callbackName] = () => {
+    callbacks[callbackName] = () => {
       cleanup();
-      if (window.turnstile) {
+      if (w.turnstile) {
         resolve();
       } else {
         reject(new Error("[Turnstile] Script loaded but turnstile object not found."));
@@ -158,6 +164,7 @@ export function loadTurnstileScript(): Promise<void> {
     // Error handler
     script.onerror = () => {
       cleanup();
+      script.remove();
       reject(new Error("[Turnstile] Script failed to load."));
     };
 
@@ -165,8 +172,14 @@ export function loadTurnstileScript(): Promise<void> {
     document.head.appendChild(script);
   });
 
-  // Cache the promise
-  (window as any)[SCRIPT_PROMISE_KEY] = promise;
+  // Cache the promise, but drop it on failure so a later mount can retry
+  // (ad-blocker, flaky network) instead of being stuck on a rejected promise.
+  w.__turnstile_load_promise__ = promise;
+  promise.catch(() => {
+    if (w.__turnstile_load_promise__ === promise) {
+      delete w.__turnstile_load_promise__;
+    }
+  });
 
   return promise;
 }
@@ -184,21 +197,12 @@ export function loadTurnstileScript(): Promise<void> {
  * ```
  */
 export function isTurnstileLoaded(): boolean {
-  return typeof window !== "undefined" && typeof window.turnstile !== "undefined";
+  return typeof window !== "undefined" && typeof (window as unknown as TurnstileWindow).turnstile !== "undefined";
 }
 
 // =============================================================================
 // Widget Control Functions
 // =============================================================================
-
-/**
- * Gets the Turnstile API if available.
- * @internal
- */
-function getTurnstile(): TurnstileAPI | undefined {
-  if (typeof window === "undefined") return undefined;
-  return window.turnstile;
-}
 
 /**
  * Resets a Turnstile widget, allowing the user to solve the challenge again.

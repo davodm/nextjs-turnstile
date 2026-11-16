@@ -1,12 +1,25 @@
 import { defineConfig } from "tsup";
 
-export default defineConfig({
-  entry: ["src/index.ts"],
+const shared = {
   outDir: "dist",
-  format: ["esm", "cjs"],
-  dts: true, // generates index.d.ts
-  target: "es2019", // good balance for Node 14+
-  splitting: false, // library, not app
+  format: ["esm", "cjs"] as ("esm" | "cjs")[],
+  dts: true,
+  target: "es2019",
+  splitting: false,
   sourcemap: false,
-  clean: true,
-});
+  external: ["next", "react", "react-dom"],
+};
+
+export default defineConfig([
+  {
+    ...shared,
+    entry: { index: "src/index.ts" },
+    clean: true,
+    // tsup strips directives, so re-add it for the client entry.
+    banner: { js: '"use client";' },
+  },
+  {
+    ...shared,
+    entry: { server: "src/server.ts" },
+  },
+]);

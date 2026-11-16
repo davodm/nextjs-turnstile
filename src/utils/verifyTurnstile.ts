@@ -1,6 +1,10 @@
 const SITEVERIFY_URL =
   "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
+/** Siteverify endpoint for China-domain widgets. */
+export const SITEVERIFY_URL_CN =
+  "https://challenges.cloudflare-cn.com/turnstile/v0/siteverify";
+
 const TOKEN_MAX_LENGTH = 2048;
 const DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -44,6 +48,11 @@ export interface VerifyOptions {
   hostname?: string;
   /** Fetch timeout in milliseconds (default: **10 000**). */
   timeout?: number;
+  /**
+   * Siteverify endpoint override. Use {@link SITEVERIFY_URL_CN} for China-domain widgets.
+   * Defaults to the global endpoint.
+   */
+  siteverifyUrl?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -57,10 +66,7 @@ export interface VerifyOptions {
  * an `errorCodes` array describing what went wrong.
  *
  * ```ts
- * // Simple — backward-compatible boolean check
- * const ok = await verifyTurnstile(token);
- *
- * // With error details
+ * // Throws on failure, so a falsy check is never reached
  * try {
  *   await verifyTurnstile(token);
  * } catch (e) {
@@ -113,14 +119,14 @@ export async function verifyTurnstile(
 
   let res: Response;
   try {
-    res = await fetch(SITEVERIFY_URL, {
+    res = await fetch(options.siteverifyUrl ?? SITEVERIFY_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: controller.signal,
     });
   } catch (error: unknown) {
-    if (error instanceof DOMException && error.name === "AbortError") {
+    if ((error as { name?: string } | null)?.name === "AbortError") {
       throw new TurnstileError(["timeout-error"]);
     }
     throw error;
@@ -128,18 +134,25 @@ export async function verifyTurnstile(
     clearTimeout(timer);
   }
 
+  // Siteverify answers 4xx with a JSON body carrying `error-codes`; surface them when present.
+  const json = (await res.json().catch(() => null)) as {
+    success?: boolean;
+    "error-codes"?: string[];
+    action?: string;
+    hostname?: string;
+  } | null;
+
   if (!res.ok) {
+    const codes = json?.["error-codes"];
+    if (codes?.length) throw new TurnstileError(codes);
     throw new Error(
       `[nextjs-turnstile] Siteverify request failed: ${res.status} ${res.statusText}`,
     );
   }
 
-  const json = (await res.json()) as {
-    success: boolean;
-    "error-codes"?: string[];
-    action?: string;
-    hostname?: string;
-  };
+  if (!json) {
+    throw new Error("[nextjs-turnstile] Siteverify returned an invalid JSON body.");
+  }
 
   if (!json.success) {
     throw new TurnstileError(json["error-codes"] ?? ["unknown-error"]);
@@ -172,15 +185,9 @@ export async function getClientIp(
   initHeaders?: Record<string, string | string[] | undefined> | Headers,
 ): Promise<string | undefined> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { headers } = require("next/headers");
-
-    let h: Headers;
-    try {
-      h = await headers();
-    } catch {
-      h = headers();
-    }
+    const { headers } = await import("next/headers");
+    // Next 15+ returns a Promise; Next 13/14 return the Headers synchronously.
+    const h = await headers();
 
     const ip =
       h.get("cf-connecting-ip") ||

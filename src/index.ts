@@ -26,15 +26,18 @@
  *
  * @example
  * ```ts
- * // Server-side: Verify the token
- * import { verifyTurnstile } from 'nextjs-turnstile';
+ * // Server-side: Verify the token (separate entry point)
+ * import { verifyTurnstile, TurnstileError } from 'nextjs-turnstile/server';
  *
  * export async function POST(request: Request) {
  *   const { token } = await request.json();
- *   const ok = await verifyTurnstile(token);
- *
- *   if (!ok) {
- *     return Response.json({ error: 'CAPTCHA failed' }, { status: 400 });
+ *   try {
+ *     await verifyTurnstile(token);
+ *   } catch (e) {
+ *     if (e instanceof TurnstileError) {
+ *       return Response.json({ error: 'CAPTCHA failed', codes: e.errorCodes }, { status: 400 });
+ *     }
+ *     throw e;
  *   }
  *
  *   // Continue with your logic...
@@ -62,17 +65,6 @@ export type {
   TurnstileRefreshBehavior,
   TurnstileRetry,
 } from "./components/Turnstile";
-
-// =============================================================================
-// Server-side Verification
-// =============================================================================
-
-export {
-  verifyTurnstile,
-  getClientIp,
-  TurnstileError,
-} from "./utils/verifyTurnstile";
-export type { VerifyOptions } from "./utils/verifyTurnstile";
 
 // =============================================================================
 // Client-side Utilities
