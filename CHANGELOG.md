@@ -9,6 +9,8 @@ All notable changes to this project will be documented in this file.
 
 - **Server helpers moved to `nextjs-turnstile/server`**: `verifyTurnstile`, `getClientIp`, `TurnstileError` and `VerifyOptions` are no longer exported from the root entry. Update imports.
 
+- **Minimum Node.js is now 20** (Node 18 is end-of-life and has no global `crypto`, so `idempotency_key` was silently skipped).
+
 ### Fixed
 
 - **`"use client"` directive**: the client entry now ships with the directive (tsup had stripped it), so `<Turnstile>` works when imported from Server Components.
