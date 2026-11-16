@@ -3,6 +3,34 @@
 All notable changes to this project will be documented in this file.
 
 
+## [2.0.0] - 2026-11-16
+
+### Breaking
+
+- **Server helpers moved to `nextjs-turnstile/server`**: `verifyTurnstile`, `getClientIp`, `TurnstileError` and `VerifyOptions` are no longer exported from the root entry. Update imports.
+
+### Fixed
+
+- **`"use client"` directive**: the client entry now ships with the directive (tsup had stripped it), so `<Turnstile>` works when imported from Server Components.
+- **Server code in client bundle**: `next/headers` is no longer reachable from the client entry.
+- **`getClientIp`**: uses `await import("next/headers")` instead of `require`, which silently failed in ESM builds.
+- **Script loader**: a failed load (ad-blocker, network) no longer caches the rejected promise; the failed script tag is removed so later mounts can retry.
+- **Stale config race**: per-effect cancel flag replaces the shared mounted ref, so a stale effect can no longer render with old options or fire `onLoad` twice.
+- **Siteverify errors**: non-2xx responses now surface Cloudflare `error-codes` as `TurnstileError`.
+- **Abort detection** no longer depends on `DOMException`.
+- Removed production `console.log`; container now has `role="group"` so `aria-label` is valid.
+- README/JSDoc examples now use `try/catch` (the function throws, it never returns `false`).
+
+### Added
+
+- `offlabelShowPrivacy` and `offlabelShowHelp` props.
+- `siteverifyUrl` option and `SITEVERIFY_URL_CN` constant for China-domain widgets.
+- GitHub Actions CI.
+
+### Changed
+
+- Removed the global `Window.turnstile` type augmentation from the published types.
+
 ## [1.0.5] - 2026-03-10
 
 ### Added
